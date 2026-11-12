@@ -1,0 +1,5 @@
+.gradle/
+.mise/
+build/
+runs/
+.idea/

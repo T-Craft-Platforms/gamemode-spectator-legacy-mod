@@ -1,0 +1,14 @@
+[tools]
+java = 'temurin-8.0.472+8'
+gradle = '3.0.0'
+
+[env]
+GRADLE_USER_HOME = '{{config_root}}/.gradle'
+
+[tasks.setup]
+description = 'Prepare the Forge 1.6.4 development workspace'
+run = 'gradle setupCIWorkspace --no-daemon'
+
+[tasks.build]
+description = 'Build the development scaffold'
+run = 'gradle build --no-daemon'

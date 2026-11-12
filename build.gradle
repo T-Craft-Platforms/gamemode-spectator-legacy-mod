@@ -1,0 +1,23 @@
+buildscript {
+    repositories { maven { url 'https://maven.minecraftforge.net' }; mavenCentral() }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:1.0-SNAPSHOT' }
+}
+if (GradleVersion.current() != GradleVersion.version('3.0')) {
+    throw new GradleException('This legacy Forge build requires Gradle 3.0 and Java 8. Run: mise run build')
+}
+if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
+    throw new GradleException('This legacy Forge build requires Java 8. Run: mise run build')
+}
+apply plugin: 'forge'
+version = '0.1.0-dev'
+group = 'org.spectator164'
+archivesBaseName = 'spectator164'
+minecraft { version = '1.6.4-9.11.1.964' }
+downloadClient.url = new net.minecraftforge.gradle.delayed.DelayedString(project, 'https://launcher.mojang.com/v1/objects/1703704407101cf72bd88e68579e3696ce733ecd/client.jar')
+downloadServer.url = new net.minecraftforge.gradle.delayed.DelayedString(project, 'https://launcher.mojang.com/v1/objects/050f93c1f3fe9e2052398f7bd6aca10c63d64a87/server.jar')
+
+jar {
+    manifest {
+        attributes 'FMLCorePlugin': 'org.spectator164.core.SpectatorCore', 'FMLCorePluginContainsFMLMod': 'true'
+    }
+}

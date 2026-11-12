@@ -1,0 +1,10 @@
+[
+  {
+    "modid": "spectator164",
+    "name": "Spectator 1.6.4",
+    "description": "Experimental spectator commands for Minecraft 1.6.4.",
+    "version": "0.1.0-dev",
+    "mcversion": "1.6.4"
+  }
+]
+
