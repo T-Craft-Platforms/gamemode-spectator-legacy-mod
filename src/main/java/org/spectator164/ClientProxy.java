@@ -31,6 +31,11 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.client.gui.Gui;
 import cpw.mods.fml.common.network.PacketDispatcher;
 import net.minecraftforge.client.event.MouseEvent;
+import net.minecraftforge.client.event.DrawBlockHighlightEvent;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockChest;
+import net.minecraft.block.BlockEnderChest;
+import net.minecraft.inventory.IInventory;
 import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraft.client.gui.inventory.GuiContainerCreative;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -45,6 +50,9 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     private final Map<Integer, Long> spectatorIds = new HashMap<Integer, Long>();
     private final ModelBiped spectatorHead = new ModelBiped();
     private Object currentWorld;
+    private boolean wasActive;
+    private boolean creativeMode;
+    private boolean allowEdit;
     @Override public void spectatorState(int id, boolean active) {
         if (active) spectatorIds.put(id, System.currentTimeMillis());
         else spectatorIds.remove(id);
@@ -62,15 +70,15 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             if (in.readUnsignedByte() != 4) return;
             String title = Packet.readString(in, 64);
+            boolean customName = in.readBoolean();
             int size = in.readUnsignedByte();
             if (size < 9 || size > 54 || size % 9 != 0) return;
-            InventoryBasic snapshot = new InventoryBasic(title, true, size);
+            InventoryBasic snapshot = new InventoryBasic(title, customName, size);
             for (int i = 0; i < size; i++) snapshot.setInventorySlotContents(i, Packet.readItemStack(in));
             if (in.available() == 0) mc.displayGuiScreen(new GuiChest(mc.thePlayer.inventory, snapshot));
         } catch (IOException ignored) { }
     }
     private int menuTicks;
-    private int menuPage;
     private final boolean[] keyWasDown = new boolean[9];
     private List<EntityPlayer> players(Minecraft mc) {
         List<EntityPlayer> result = new ArrayList<EntityPlayer>();
@@ -83,15 +91,10 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     }
     private void choose(Minecraft mc, int slot) {
         List<EntityPlayer> players = players(mc);
-        int start = menuPage * 7;
-        if (slot < 7 && start + slot < players.size()) {
-            byte[] data = ByteBuffer.allocate(5).put((byte) 1).putInt(players.get(start + slot).entityId).array();
+        if (slot < players.size()) {
+            byte[] data = ByteBuffer.allocate(5).put((byte) 1).putInt(players.get(slot).entityId).array();
             PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", data));
             menuTicks = 0;
-        } else if (slot == 7 && menuPage > 0) {
-            menuPage--;
-        } else if (slot == 8 && start + 7 < players.size()) {
-            menuPage++;
         }
     }
         public void init() {
@@ -103,8 +106,22 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     public void tickStart(EnumSet<TickType> types, Object... data) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.entityRenderer == null) return;
-        if (currentWorld != mc.theWorld) { spectatorIds.clear(); currentWorld = mc.theWorld; }
-                boolean active = mc.thePlayer != null && SpectatorMod.active(mc.thePlayer);
+        boolean worldChanged = currentWorld != mc.theWorld;
+        if (worldChanged) {
+            spectatorIds.clear();
+            currentWorld = mc.theWorld;
+            if (mc.theWorld == null) SpectatorMod.clearClientState();
+        }
+        boolean active = mc.thePlayer != null && SpectatorMod.active(mc.thePlayer);
+        boolean creative = mc.playerController != null && mc.playerController.isInCreativeMode();
+        boolean canEdit = mc.thePlayer != null && mc.thePlayer.capabilities.allowEdit;
+        if (worldChanged || active != wasActive || creative != creativeMode || canEdit != allowEdit) {
+            speed = 0.05F;
+            if (mc.thePlayer != null) mc.thePlayer.capabilities.setFlySpeed(speed);
+        }
+        wasActive = active;
+        creativeMode = creative;
+        allowEdit = canEdit;
                 if (active) {
             float effectiveSpeed = speed * (mc.thePlayer.isSprinting() ? 2.0F : 1.0F);
             mc.thePlayer.capabilities.setFlySpeed(effectiveSpeed);
@@ -116,15 +133,14 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             }
         }
         if (!active || mc.currentScreen != null) menuTicks = 0;
-        if (menuTicks > 0) {
-            menuTicks--;
-            for (int i = 0; i < 9; i++) {
-                boolean down = Keyboard.isKeyDown(Keyboard.KEY_1 + i);
-                if (down && !keyWasDown[i]) { choose(mc, i); if (menuTicks > 0) menuTicks = 100; }
-                keyWasDown[i] = down;
+        if (menuTicks > 0) menuTicks--;
+        for (int i = 0; i < 9; i++) {
+            boolean down = Keyboard.isKeyDown(Keyboard.KEY_1 + i);
+            if (active && mc.currentScreen == null && down && !keyWasDown[i]) {
+                if (menuTicks > 0) { choose(mc, i); if (menuTicks > 0) menuTicks = 100; }
+                else { menuTicks = 100; }
             }
-        } else {
-            for (int i = 0; i < 9; i++) keyWasDown[i] = Keyboard.isKeyDown(Keyboard.KEY_1 + i);
+            keyWasDown[i] = down;
         }
         if (active && mc.entityRenderer.itemRenderer != spectatorRenderer) {
             originalRenderer = mc.entityRenderer.itemRenderer;
@@ -165,15 +181,12 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             return;
         }
         if (event.button == 0 && event.buttonstate) {
-            menuTicks = 100;
-            menuPage = 0;
             event.setCanceled(true);
             return;
         }
         if (event.dwheel == 0) return;
         speed = Math.max(0.005F, Math.min(0.5F, speed + (event.dwheel > 0 ? 0.005F : -0.005F)));
         mc.thePlayer.capabilities.setFlySpeed(speed);
-        mc.ingameGUI.setRecordPlayingMessage(String.format("Flying speed: %.0f%%", speed * 2000.0F));
         event.setCanceled(true);
     }
 
@@ -222,17 +235,31 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             Gui.drawRect(x + 1, height - 23, x + 19, height - 4, 0x88606060);
             mc.fontRenderer.drawStringWithShadow(Integer.toString(i + 1), x + 6, height - 19, 0xffffff);
         }
-        int start = menuPage * 7;
-        for (int i = 0; i < 7 && start + i < entries.size(); i++) {
-            mc.fontRenderer.drawStringWithShadow((i + 1) + ": " + entries.get(start + i).username, left, height - 37 - i * 10, 0xffffff);
+        for (int i = 0; i < 9 && i < entries.size(); i++) {
+            mc.fontRenderer.drawStringWithShadow((i + 1) + ": " + entries.get(i).username, left, height - 37 - i * 10, 0xffffff);
         }
         if (entries.isEmpty()) mc.fontRenderer.drawStringWithShadow("No nearby players", left, height - 37, 0xffffff);
-        if (menuPage > 0) mc.fontRenderer.drawStringWithShadow("8: Previous", left + 94, height - 37, 0xffffff);
-        if (start + 7 < entries.size()) mc.fontRenderer.drawStringWithShadow("9: Next", left + 94, height - 47, 0xffffff);
+    }
+    @ForgeSubscribe public void blockHighlight(DrawBlockHighlightEvent event) {
+        if (SpectatorMod.active(event.player)) event.setCanceled(true);
+    }
+    private boolean interactiveTarget(Minecraft mc) {
+        MovingObjectPosition target = mc.objectMouseOver;
+        if (target == null) return false;
+        if (target.typeOfHit == EnumMovingObjectType.ENTITY) return target.entityHit != null;
+        if (target.typeOfHit != EnumMovingObjectType.TILE || mc.theWorld == null) return false;
+        int id = mc.theWorld.getBlockId(target.blockX, target.blockY, target.blockZ);
+        Block block = id > 0 ? Block.blocksList[id] : null;
+        return block instanceof BlockChest || block instanceof BlockEnderChest
+                || mc.theWorld.getBlockTileEntity(target.blockX, target.blockY, target.blockZ) instanceof IInventory;
     }
     @ForgeSubscribe public void overlay(RenderGameOverlayEvent.Pre event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer)) return;
+        if (event.type == RenderGameOverlayEvent.ElementType.CROSSHAIRS && !interactiveTarget(mc)) {
+            event.setCanceled(true);
+            return;
+        }
         switch (event.type) {
             case HOTBAR: case HEALTH: case FOOD: case ARMOR: case AIR: case EXPERIENCE: case HEALTHMOUNT: case JUMPBAR:
                 event.setCanceled(true);

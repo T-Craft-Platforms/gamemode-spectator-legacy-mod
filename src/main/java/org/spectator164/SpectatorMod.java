@@ -21,6 +21,9 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
 import cpw.mods.fml.common.registry.TickRegistry;
+import cpw.mods.fml.common.registry.GameRegistry;
+import cpw.mods.fml.common.IPlayerTracker;
+import net.minecraftforge.event.entity.EntityJoinWorldEvent;
 import cpw.mods.fml.common.network.NetworkMod;
 import cpw.mods.fml.common.network.IPacketHandler;
 import cpw.mods.fml.common.network.PacketDispatcher;
@@ -50,10 +53,12 @@ public final class SpectatorMod implements ITickHandler {
     private static final String KEY = "spectator164Active";
     private static boolean clientActive;
     static boolean clientActive() { return clientActive; }
+    static void clearClientState() { clientActive = false; }
     static boolean active(EntityPlayer p) { return p.worldObj.isRemote ? proxy.isClientSpectator(p) : p.getEntityData().getBoolean(KEY); }
     @EventHandler public void init(FMLInitializationEvent e) {
         MinecraftForge.EVENT_BUS.register(this);
         proxy.init();
+        GameRegistry.registerPlayerTracker(new PlayerTracker());
         TickRegistry.registerTickHandler(this, Side.SERVER);
         TickRegistry.registerTickHandler(this, Side.CLIENT);
     }
@@ -104,6 +109,7 @@ public final class SpectatorMod implements ITickHandler {
             if (title == null) title = "Container";
             if (title.length() > 64) title = title.substring(0, 64);
             Packet.writeString(title, out);
+            out.writeBoolean(inventory.isInvNameLocalized());
             out.writeByte(size);
             for (int i = 0; i < size; i++) Packet.writeItemStack(i < count ? inventory.getStackInSlot(i) : null, out);
             out.flush();
@@ -132,6 +138,31 @@ public final class SpectatorMod implements ITickHandler {
                 }
             }
         }
+    }
+    private static void restore(EntityPlayer p) {
+        if (!active(p)) return;
+        p.noClip = true;
+        p.fallDistance = 0;
+        p.capabilities.allowFlying = true;
+        p.capabilities.isFlying = true;
+        p.capabilities.disableDamage = true;
+        p.setInvisible(true);
+    }
+    @ForgeSubscribe public void joinWorld(EntityJoinWorldEvent event) {
+        if (!event.world.isRemote && event.entity instanceof EntityPlayer) restore((EntityPlayer) event.entity);
+    }
+    public static class PlayerTracker implements IPlayerTracker {
+        private void update(EntityPlayer player) {
+            EntityPlayerMP p = (EntityPlayerMP) player;
+            restore(p);
+            p.sendPlayerAbilities();
+            sync(p, active(p));
+            broadcastState(p, active(p));
+        }
+        public void onPlayerLogin(EntityPlayer player) { update(player); }
+        public void onPlayerChangedDimension(EntityPlayer player) { update(player); }
+        public void onPlayerRespawn(EntityPlayer player) { update(player); }
+        public void onPlayerLogout(EntityPlayer player) { }
     }
     public void tickStart(EnumSet<TickType> type, Object... data) {
         EntityPlayer p=(EntityPlayer)data[0];
