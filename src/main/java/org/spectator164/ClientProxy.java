@@ -4,6 +4,7 @@ import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemRenderer;
+import net.minecraft.client.renderer.Tessellator;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
 import cpw.mods.fml.common.registry.TickRegistry;
@@ -55,10 +56,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     private boolean wasActive;
     private boolean creativeMode;
     private boolean allowEdit;
-    private boolean debugShortcutDown;
     private Entity camera;
-    private int savedPerspective;
-    private boolean cameraPerspectiveSaved;
     @Override public void cameraTarget(int id) {
         Minecraft mc = Minecraft.getMinecraft();
         if (id == -1 || mc.theWorld == null) { stopCamera(mc); return; }
@@ -67,19 +65,10 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             if (mc.thePlayer != null && SpectatorMod.active(mc.thePlayer)) requestCamera(-1);
             return;
         }
-        if (!cameraPerspectiveSaved) {
-            savedPerspective = mc.gameSettings.thirdPersonView;
-            cameraPerspectiveSaved = true;
-        }
         camera = target;
-        mc.gameSettings.thirdPersonView = 0;
         if (target instanceof EntityLivingBase) mc.renderViewEntity = (EntityLivingBase) target;
     }
     private void stopCamera(Minecraft mc) {
-        if (cameraPerspectiveSaved) {
-            mc.gameSettings.thirdPersonView = savedPerspective;
-            cameraPerspectiveSaved = false;
-        }
         if (mc.thePlayer != null) mc.renderViewEntity = mc.thePlayer;
         camera = null;
     }
@@ -112,6 +101,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         } catch (IOException ignored) { }
     }
     private int menuTicks;
+    private List<EntityPlayer> menuPlayers = new ArrayList<EntityPlayer>();
     private final boolean[] keyWasDown = new boolean[9];
     private List<EntityPlayer> players(Minecraft mc) {
         List<EntityPlayer> result = new ArrayList<EntityPlayer>();
@@ -123,9 +113,8 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         return result;
     }
     private void choose(Minecraft mc, int slot) {
-        List<EntityPlayer> players = players(mc);
-        if (slot < players.size()) {
-            byte[] data = ByteBuffer.allocate(5).put((byte) 1).putInt(players.get(slot).entityId).array();
+        if (slot < menuPlayers.size() && mc.theWorld.getEntityByID(menuPlayers.get(slot).entityId) == menuPlayers.get(slot) && !menuPlayers.get(slot).isDead) {
+            byte[] data = ByteBuffer.allocate(5).put((byte) 1).putInt(menuPlayers.get(slot).entityId).array();
             PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", data));
             menuTicks = 0;
         }
@@ -147,11 +136,6 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             if (mc.theWorld == null) SpectatorMod.clearClientState();
         }
         boolean active = mc.thePlayer != null && SpectatorMod.active(mc.thePlayer);
-        boolean shortcut = mc.currentScreen == null && Keyboard.isKeyDown(Keyboard.KEY_F3) && Keyboard.isKeyDown(Keyboard.KEY_N);
-        if (shortcut && !debugShortcutDown && mc.thePlayer != null) {
-            PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", new byte[] { 7 }));
-        }
-        debugShortcutDown = shortcut;
         if (camera != null) {
             if (!active || camera.isDead || camera.worldObj != mc.theWorld || mc.theWorld.getEntityByID(camera.entityId) != camera) {
                 if (active) requestCamera(-1);
@@ -160,7 +144,6 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
                 requestCamera(-1);
                 stopCamera(mc);
             } else {
-                mc.gameSettings.thirdPersonView = 0;
                 mc.thePlayer.setPositionAndRotation(camera.posX, camera.posY + camera.getEyeHeight() - mc.thePlayer.getEyeHeight(), camera.posZ,
                         camera.rotationYaw, camera.rotationPitch);
                 mc.thePlayer.motionX = mc.thePlayer.motionY = mc.thePlayer.motionZ = 0;
@@ -191,7 +174,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             boolean down = Keyboard.isKeyDown(Keyboard.KEY_1 + i);
             if (active && mc.currentScreen == null && down && !keyWasDown[i]) {
                 if (menuTicks > 0) { choose(mc, i); if (menuTicks > 0) menuTicks = 100; }
-                else { menuTicks = 100; }
+                else { menuPlayers = players(mc); menuTicks = 100; }
             }
             keyWasDown[i] = down;
         }
@@ -252,13 +235,14 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         EntityPlayer player = event.entityPlayer;
         Long seen = spectatorIds.get(player.entityId);
         boolean self = player == mc.thePlayer && SpectatorMod.active(player);
-        if (self && camera != null) { event.setCanceled(true); return; }
+        boolean inventoryPreview = self && SpectatorInventory.isDrawingPlayer();
+        if (self && camera != null && !inventoryPreview) { event.setCanceled(true); return; }
         if (mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer) || !(player instanceof AbstractClientPlayer)
                 || (!self && (seen == null || System.currentTimeMillis() - seen.longValue() > 5000L))) return;
         float t = event.partialRenderTick;
-        double x = player.lastTickPosX + (player.posX - player.lastTickPosX) * t - RenderManager.renderPosX;
-        double y = player.lastTickPosY + (player.posY - player.lastTickPosY) * t - RenderManager.renderPosY;
-        double z = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * t - RenderManager.renderPosZ;
+        double x = inventoryPreview ? 0 : player.lastTickPosX + (player.posX - player.lastTickPosX) * t - RenderManager.renderPosX;
+        double y = inventoryPreview ? 0 : player.lastTickPosY + (player.posY - player.lastTickPosY) * t - RenderManager.renderPosY;
+        double z = inventoryPreview ? 0 : player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * t - RenderManager.renderPosZ;
         float yaw = player.prevRotationYawHead + (player.rotationYawHead - player.prevRotationYawHead) * t;
         float pitch = player.prevRotationPitch + (player.rotationPitch - player.prevRotationPitch) * t;
         GL11.glPushMatrix();
@@ -283,7 +267,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     @ForgeSubscribe public void menu(RenderGameOverlayEvent.Post event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (event.type != RenderGameOverlayEvent.ElementType.ALL || menuTicks <= 0 || mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer)) return;
-        List<EntityPlayer> entries = players(mc);
+        List<EntityPlayer> entries = menuPlayers;
         int width = event.resolution.getScaledWidth();
         int height = event.resolution.getScaledHeight();
         int left = width / 2 - 90;
@@ -291,12 +275,31 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         for (int i = 0; i < 9; i++) {
             int x = left + i * 20;
             Gui.drawRect(x + 1, height - 23, x + 19, height - 4, 0x88606060);
-            mc.fontRenderer.drawStringWithShadow(Integer.toString(i + 1), x + 6, height - 19, 0xffffff);
+            if (i < entries.size() && entries.get(i) instanceof AbstractClientPlayer) {
+                mc.renderEngine.bindTexture(((AbstractClientPlayer) entries.get(i)).getLocationSkin());
+                GL11.glColor4f(1, 1, 1, 1);
+                drawSkinLayer(x + 2, height - 22, 8, 8);
+                GL11.glEnable(GL11.GL_BLEND);
+                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                drawSkinLayer(x + 2, height - 22, 40, 8);
+                GL11.glDisable(GL11.GL_BLEND);
+            } else {
+                mc.fontRenderer.drawStringWithShadow(Integer.toString(i + 1), x + 6, height - 19, 0xffffff);
+            }
         }
         for (int i = 0; i < 9 && i < entries.size(); i++) {
             mc.fontRenderer.drawStringWithShadow((i + 1) + ": " + entries.get(i).username, left, height - 37 - i * 10, 0xffffff);
         }
         if (entries.isEmpty()) mc.fontRenderer.drawStringWithShadow("No nearby players", left, height - 37, 0xffffff);
+    }
+    private void drawSkinLayer(int x, int y, int u, int v) {
+        Tessellator t = Tessellator.instance;
+        t.startDrawingQuads();
+        t.addVertexWithUV(x, y + 16, 0, u / 64.0D, (v + 8) / 32.0D);
+        t.addVertexWithUV(x + 16, y + 16, 0, (u + 8) / 64.0D, (v + 8) / 32.0D);
+        t.addVertexWithUV(x + 16, y, 0, (u + 8) / 64.0D, v / 32.0D);
+        t.addVertexWithUV(x, y, 0, u / 64.0D, v / 32.0D);
+        t.draw();
     }
     @ForgeSubscribe public void blockHighlight(DrawBlockHighlightEvent event) {
         if (SpectatorMod.active(event.player)) event.setCanceled(true);

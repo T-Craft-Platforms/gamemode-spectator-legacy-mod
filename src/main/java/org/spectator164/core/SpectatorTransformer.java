@@ -23,7 +23,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
         final boolean gameManager = "net.minecraft.item.ItemInWorldManager".equals(transformedName);
         final boolean controller = "net.minecraft.client.multiplayer.PlayerControllerMP".equals(transformedName);
         if (!entity && !server && !gui && !living && !playerClass && !minecart && !minecraft && !forgeHud && !gameType && !gameManager && !controller) return bytes;
-        final int[] changes = new int[14];
+        final int[] changes = new int[17];
         ClassReader reader = new ClassReader(bytes);
         ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         reader.accept(new ClassVisitor(ASM4, writer) {
@@ -136,14 +136,22 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                         super.visitInsn(opcode);
                     }
                     @Override public void visitFieldInsn(int opcode, String owner, String field, String descriptor) {
-                        if (hotbar && opcode == PUTFIELD && owner.equals("net/minecraft/entity/player/InventoryPlayer")
+                        if (hotbar && opcode == PUTFIELD && owner.equals("net/minecraft/client/settings/GameSettings") && descriptor.equals("Z")
+                                && (field.equals("showDebugInfo") || field.equals("field_74330_P") || field.equals("showDebugProfilerChart") || field.equals("field_74329_Q"))) {
+                            boolean info = field.equals("showDebugInfo") || field.equals("field_74330_P");
+                            changes[info ? 14 : 15]++;
+                            super.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", info ? "setDebugInfo" : "setDebugProfiler", "(Lnet/minecraft/client/settings/GameSettings;Z)V");
+                        } else if (hotbar && opcode == PUTFIELD && owner.equals("net/minecraft/entity/player/InventoryPlayer")
                                 && (field.equals("currentItem") || field.equals("field_70461_c")) && descriptor.equals("I")) {
                             changes[7]++;
                             super.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", "selectHotbarSlot", "(Lnet/minecraft/entity/player/InventoryPlayer;I)V");
                         } else super.visitFieldInsn(opcode, owner, field, descriptor);
                     }
                     @Override public void visitMethodInsn(int opcode, String owner, String target, String descriptor) {
-                        if (particles && opcode == INVOKEVIRTUAL && owner.equals("net/minecraft/world/World")
+                        if (hotbar && opcode == INVOKESTATIC && owner.equals("org/lwjgl/input/Keyboard") && target.equals("next") && descriptor.equals("()Z")) {
+                            changes[16]++;
+                            super.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", "nextKeyboardEvent", "()Z");
+                        } else if (particles && opcode == INVOKEVIRTUAL && owner.equals("net/minecraft/world/World")
                                 && (target.equals("spawnParticle") || target.equals("func_72869_a"))
                                 && descriptor.equals("(Ljava/lang/String;DDDDDD)V")) {
                             super.visitVarInsn(ALOAD, 0);
@@ -158,7 +166,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 };
             }
         }, 0);
-                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && changes[7] != 1) || (forgeHud && changes[8] != 1) || (gameType && changes[11] != 1) || (gameManager && changes[12] != 1) || (controller && changes[13] != 1)) {
+                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && (changes[7] != 1 || changes[14] != 1 || changes[15] != 1 || changes[16] != 1)) || (forgeHud && changes[8] != 1) || (gameType && changes[11] != 1) || (gameManager && changes[12] != 1) || (controller && changes[13] != 1)) {
             throw new IllegalStateException("Spectator164 could not apply the expected hooks to " + transformedName + ": " + changes[0] + "," + changes[1] + "," + changes[2]);
         }
         System.out.println("Spectator164 hooks verified for " + transformedName);
