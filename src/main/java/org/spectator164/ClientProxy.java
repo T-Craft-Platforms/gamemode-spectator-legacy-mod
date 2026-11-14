@@ -78,6 +78,10 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         mc.renderViewEntity = cameraAnchor;
     }
     private void stopCamera(Minecraft mc) {
+        if (mc.thePlayer != null && cameraAnchor != null) {
+            mc.thePlayer.rotationYaw = mc.thePlayer.prevRotationYaw = cameraAnchor.rotationYaw;
+            mc.thePlayer.rotationPitch = mc.thePlayer.prevRotationPitch = cameraAnchor.rotationPitch;
+        }
         if (mc.thePlayer != null) mc.renderViewEntity = mc.thePlayer;
         camera = null;
         cameraAnchor = null;
@@ -92,7 +96,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         cameraAnchor.lastTickPosX = x + camera.lastTickPosX - camera.posX;
         cameraAnchor.lastTickPosY = y + camera.lastTickPosY - camera.posY;
         cameraAnchor.lastTickPosZ = z + camera.lastTickPosZ - camera.posZ;
-        cameraAnchor.rotationYaw = camera instanceof EntityHanging ? ((EntityHanging) camera).hangingDirection * 90.0F : camera.rotationYaw;
+        cameraAnchor.rotationYaw = SpectatorHooks.cameraYaw(camera);
         cameraAnchor.prevRotationYaw = camera instanceof EntityHanging ? cameraAnchor.rotationYaw : camera.prevRotationYaw;
         cameraAnchor.rotationPitch = camera.rotationPitch;
         cameraAnchor.prevRotationPitch = camera.prevRotationPitch;
@@ -195,7 +199,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
                 stopCamera(mc);
             } else {
                 mc.thePlayer.setPositionAndRotation(SpectatorHooks.cameraX(camera), SpectatorHooks.cameraY(camera) - mc.thePlayer.getEyeHeight(), SpectatorHooks.cameraZ(camera),
-                        camera.rotationYaw, camera.rotationPitch);
+                        SpectatorHooks.cameraYaw(camera), camera.rotationPitch);
                 mc.thePlayer.motionX = mc.thePlayer.motionY = mc.thePlayer.motionZ = 0;
             }
         }

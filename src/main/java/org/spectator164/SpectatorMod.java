@@ -113,7 +113,12 @@ public final class SpectatorMod implements ITickHandler {
         PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", ByteBuffer.allocate(5).put((byte) 6).putInt(id).array()), (Player) p);
     }
     private static void stopCamera(EntityPlayerMP p) {
-        if (cameras.remove(p) != null) cameraPacket(p, -1);
+        Entity target = cameras.remove(p);
+        if (target != null) {
+            p.rotationYaw = p.prevRotationYaw = SpectatorHooks.cameraYaw(target);
+            p.rotationPitch = p.prevRotationPitch = target.rotationPitch;
+            cameraPacket(p, -1);
+        }
     }
     static void sync(EntityPlayerMP p, boolean enabled) { PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", new byte[]{(byte)(enabled ? 1 : 0)}), (Player)p); }
     static void broadcastState(EntityPlayerMP p, boolean enabled) {
@@ -259,9 +264,9 @@ public final class SpectatorMod implements ITickHandler {
         }
         double x = SpectatorHooks.cameraX(target), y = SpectatorHooks.cameraY(target) - p.getEyeHeight(), z = SpectatorHooks.cameraZ(target);
         if (p.getDistanceSq(x, y, z) > 64.0D) {
-            spectator.playerNetServerHandler.setPlayerLocation(x, y, z, target.rotationYaw, target.rotationPitch);
+            spectator.playerNetServerHandler.setPlayerLocation(x, y, z, SpectatorHooks.cameraYaw(target), target.rotationPitch);
         } else {
-            p.setPositionAndRotation(x, y, z, target.rotationYaw, target.rotationPitch);
+            p.setPositionAndRotation(x, y, z, SpectatorHooks.cameraYaw(target), target.rotationPitch);
         }
         p.motionX = p.motionY = p.motionZ = 0;
     }

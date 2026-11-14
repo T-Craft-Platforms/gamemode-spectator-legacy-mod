@@ -40,6 +40,9 @@ public final class SpectatorHooks {
         if (entity instanceof EntityLivingBase) return entity.boundingBox.minY + entity.getEyeHeight();
         return (entity.boundingBox.minY + entity.boundingBox.maxY) / 2.0D;
     }
+    public static float cameraYaw(Entity entity) {
+        return entity instanceof EntityHanging ? ((EntityHanging) entity).hangingDirection * 90.0F : entity.rotationYaw;
+    }
     public static boolean blockDrop(NetServerHandler handler, Packet14BlockDig packet) {
         return (packet.status == 3 || packet.status == 4) && blockInventoryChange(handler);
     }
