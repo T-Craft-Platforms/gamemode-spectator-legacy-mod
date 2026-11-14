@@ -375,7 +375,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     @ForgeSubscribe public void overlay(RenderGameOverlayEvent.Pre event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer)) return;
-        if (event.type == RenderGameOverlayEvent.ElementType.CROSSHAIRS && !interactiveTarget(mc)) {
+        if (event.type == RenderGameOverlayEvent.ElementType.CROSSHAIRS && (camera != null || !interactiveTarget(mc))) {
             event.setCanceled(true);
             return;
         }
