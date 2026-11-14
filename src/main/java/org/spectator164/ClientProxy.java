@@ -18,7 +18,18 @@ import java.io.IOException;
 import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.client.gui.inventory.GuiChest;
 import net.minecraft.client.gui.inventory.GuiFurnace;
+import net.minecraft.client.gui.inventory.GuiDispenser;
+import net.minecraft.client.gui.inventory.GuiBrewingStand;
+import net.minecraft.client.gui.inventory.GuiBeacon;
+import net.minecraft.client.gui.GuiHopper;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiButton;
 import net.minecraft.tileentity.TileEntityFurnace;
+import net.minecraft.tileentity.TileEntityDispenser;
+import net.minecraft.tileentity.TileEntityDropper;
+import net.minecraft.tileentity.TileEntityHopper;
+import net.minecraft.tileentity.TileEntityBrewingStand;
+import net.minecraft.tileentity.TileEntityBeacon;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.EnumMovingObjectType;
@@ -128,6 +139,41 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         try {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int type = in.readUnsignedByte();
+            if (type == 9) {
+                int kind = in.readUnsignedByte();
+                String title = Packet.readString(in, 64);
+                boolean customName = in.readBoolean();
+                IInventory snapshot;
+                GuiScreen screen;
+                if (kind == 0 || kind == 1) {
+                    TileEntityDispenser dispenser = kind == 0 ? new TileEntityDropper() : new TileEntityDispenser();
+                    if (customName) dispenser.setCustomName(title);
+                    snapshot = dispenser;
+                    screen = new GuiDispenser(mc.thePlayer.inventory, dispenser);
+                } else if (kind == 2) {
+                    TileEntityHopper hopper = new TileEntityHopper();
+                    if (customName) hopper.setInventoryName(title);
+                    snapshot = hopper;
+                    screen = new GuiHopper(mc.thePlayer.inventory, hopper);
+                } else if (kind == 3) {
+                    TileEntityBrewingStand brewing = new TileEntityBrewingStand();
+                    if (customName) brewing.func_94131_a(title);
+                    brewing.setBrewTime(in.readInt());
+                    snapshot = brewing;
+                    screen = new GuiBrewingStand(mc.thePlayer.inventory, brewing);
+                } else if (kind == 4) {
+                    TileEntityBeacon beacon = new TileEntityBeacon();
+                    if (customName) beacon.func_94047_a(title);
+                    beacon.setLevels(in.readInt());
+                    beacon.setPrimaryEffect(in.readInt());
+                    beacon.setSecondaryEffect(in.readInt());
+                    snapshot = beacon;
+                    screen = new ReadOnlyBeacon(mc.thePlayer.inventory, beacon);
+                } else return;
+                for (int i = 0; i < snapshot.getSizeInventory(); i++) snapshot.setInventorySlotContents(i, Packet.readItemStack(in));
+                if (in.available() == 0) mc.displayGuiScreen(screen);
+                return;
+            }
             String title = Packet.readString(in, 64);
             boolean customName = in.readBoolean();
             if (type == 8) {
@@ -147,6 +193,12 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             for (int i = 0; i < size; i++) snapshot.setInventorySlotContents(i, Packet.readItemStack(in));
             if (in.available() == 0) mc.displayGuiScreen(new GuiChest(mc.thePlayer.inventory, snapshot));
         } catch (IOException ignored) { }
+    }
+    private static final class ReadOnlyBeacon extends GuiBeacon {
+        ReadOnlyBeacon(net.minecraft.entity.player.InventoryPlayer inventory, TileEntityBeacon beacon) { super(inventory, beacon); }
+        @Override protected void actionPerformed(GuiButton button) {
+            if (button.id == -2) super.actionPerformed(button);
+        }
     }
     private int menuTicks;
     private List<EntityPlayer> menuPlayers = new ArrayList<EntityPlayer>();

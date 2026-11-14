@@ -10,6 +10,11 @@ import java.io.IOException;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.tileentity.TileEntityFurnace;
+import net.minecraft.tileentity.TileEntityDispenser;
+import net.minecraft.tileentity.TileEntityDropper;
+import net.minecraft.tileentity.TileEntityHopper;
+import net.minecraft.tileentity.TileEntityBrewingStand;
+import net.minecraft.tileentity.TileEntityBeacon;
 import net.minecraft.entity.Entity;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.SidedProxy;
@@ -135,6 +140,33 @@ public final class SpectatorMod implements ITickHandler {
         else if (block instanceof BlockEnderChest) inventory = player.getInventoryEnderChest();
         else if (tile instanceof IInventory && tile.getClass().getName().startsWith("net.minecraft.tileentity.")) inventory = (IInventory) tile;
         if (inventory == null) return;
+        int kind = tile instanceof TileEntityDropper ? 0 : tile instanceof TileEntityDispenser ? 1
+                : tile instanceof TileEntityHopper ? 2 : tile instanceof TileEntityBrewingStand ? 3
+                : tile instanceof TileEntityBeacon ? 4 : -1;
+        if (kind >= 0) {
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputStream(bytes);
+                out.writeByte(9);
+                out.writeByte(kind);
+                String title = inventory.getInvName();
+                if (title == null) title = "Container";
+                if (title.length() > 64) title = title.substring(0, 64);
+                Packet.writeString(title, out);
+                out.writeBoolean(inventory.isInvNameLocalized());
+                if (kind == 3) out.writeInt(((TileEntityBrewingStand) tile).getBrewTime());
+                if (kind == 4) {
+                    TileEntityBeacon beacon = (TileEntityBeacon) tile;
+                    out.writeInt(beacon.getLevels());
+                    out.writeInt(beacon.getPrimaryEffect());
+                    out.writeInt(beacon.getSecondaryEffect());
+                }
+                for (int i = 0; i < inventory.getSizeInventory(); i++) Packet.writeItemStack(inventory.getStackInSlot(i), out);
+                out.flush();
+                if (bytes.size() <= 32760) PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", bytes.toByteArray()), (Player) player);
+            } catch (IOException ignored) { }
+            return;
+        }
         if (tile instanceof TileEntityFurnace) {
             try {
                 TileEntityFurnace furnace = (TileEntityFurnace) tile;
@@ -177,7 +209,7 @@ public final class SpectatorMod implements ITickHandler {
                                 clientActive = packet.data[0] != 0;
             } else if (p.worldObj.isRemote && packet.data.length == 6 && packet.data[0] == 2) {
                 proxy.spectatorState(ByteBuffer.wrap(packet.data, 1, 4).getInt(), packet.data[5] != 0);
-            } else if (p.worldObj.isRemote && packet.data.length > 1 && (packet.data[0] == 4 || packet.data[0] == 8)) {
+            } else if (p.worldObj.isRemote && packet.data.length > 1 && (packet.data[0] == 4 || packet.data[0] == 8 || packet.data[0] == 9)) {
                 proxy.showInventorySnapshot(packet.data);
             } else if (p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 6) {
                 proxy.cameraTarget(ByteBuffer.wrap(packet.data, 1, 4).getInt());
