@@ -12,3 +12,7 @@ run = 'gradle setupCIWorkspace --no-daemon'
 [tasks.build]
 description = 'Build the development scaffold'
 run = 'gradle build --no-daemon'
+
+[tasks.format]
+description = 'Format Java sources with the project-pinned formatter'
+run = 'gradle formatJava --no-daemon'
