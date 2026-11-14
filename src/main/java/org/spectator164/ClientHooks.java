@@ -26,7 +26,7 @@ public final class ClientHooks {
         if (debugKeyPending && down && mc.currentScreen == null && mc.thePlayer != null
                 && ((key == Keyboard.KEY_N && Keyboard.isKeyDown(Keyboard.KEY_F3))
                     || (key == Keyboard.KEY_F3 && Keyboard.isKeyDown(Keyboard.KEY_N)))) {
-            if (!spectatorShortcutUsed) PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", new byte[] { 7 }));
+            PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", new byte[] { 7 }));
             spectatorShortcutUsed = true;
         }
         if (key == Keyboard.KEY_F3 && !down && debugKeyPending) {

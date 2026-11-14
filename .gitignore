@@ -3,3 +3,4 @@
 build/
 runs/
 .idea/
+/mise.local.toml
