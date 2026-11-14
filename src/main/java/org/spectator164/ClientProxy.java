@@ -17,6 +17,8 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.client.gui.inventory.GuiChest;
+import net.minecraft.client.gui.inventory.GuiFurnace;
+import net.minecraft.tileentity.TileEntityFurnace;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.EnumMovingObjectType;
@@ -90,9 +92,20 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         if (mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer)) return;
         try {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-            if (in.readUnsignedByte() != 4) return;
+            int type = in.readUnsignedByte();
             String title = Packet.readString(in, 64);
             boolean customName = in.readBoolean();
+            if (type == 8) {
+                TileEntityFurnace furnace = new TileEntityFurnace();
+                if (customName) furnace.setGuiDisplayName(title);
+                furnace.furnaceBurnTime = in.readInt();
+                furnace.currentItemBurnTime = in.readInt();
+                furnace.furnaceCookTime = in.readInt();
+                for (int i = 0; i < 3; i++) furnace.setInventorySlotContents(i, Packet.readItemStack(in));
+                if (in.available() == 0) mc.displayGuiScreen(new GuiFurnace(mc.thePlayer.inventory, furnace));
+                return;
+            }
+            if (type != 4) return;
             int size = in.readUnsignedByte();
             if (size < 9 || size > 54 || size % 9 != 0) return;
             InventoryBasic snapshot = new InventoryBasic(title, customName, size);
