@@ -21,6 +21,7 @@ import net.minecraft.client.gui.inventory.GuiFurnace;
 import net.minecraft.client.gui.inventory.GuiDispenser;
 import net.minecraft.client.gui.inventory.GuiBrewingStand;
 import net.minecraft.client.gui.inventory.GuiBeacon;
+import net.minecraft.client.gui.inventory.GuiScreenHorseInventory;
 import net.minecraft.client.gui.GuiHopper;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiButton;
@@ -46,6 +47,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityHanging;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.passive.EntityHorse;
 import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 import net.minecraft.client.gui.Gui;
@@ -139,6 +141,42 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         try {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int type = in.readUnsignedByte();
+            if (type == 10) {
+                int kind = in.readUnsignedByte();
+                if (kind > 2) return;
+                String title = Packet.readString(in, 64);
+                boolean customName = in.readBoolean();
+                int horseType = 0, variant = 0, age = 0;
+                boolean tame = false;
+                if (kind == 0) {
+                    horseType = in.readUnsignedByte();
+                    variant = in.readInt();
+                    age = in.readInt();
+                    tame = in.readBoolean();
+                    if (horseType > 4) return;
+                }
+                int size = in.readUnsignedByte();
+                if (kind == 0 ? size != 2 && size != 17 : size != (kind == 1 ? 27 : 5)) return;
+                InventoryBasic snapshot = new InventoryBasic(title, customName, size);
+                for (int i = 0; i < size; i++) snapshot.setInventorySlotContents(i, Packet.readItemStack(in));
+                if (in.available() != 0) return;
+                if (kind == 0) {
+                    EntityHorse horse = new EntityHorse(mc.theWorld);
+                    horse.setHorseType(horseType);
+                    horse.setHorseVariant(variant);
+                    horse.setGrowingAge(age);
+                    horse.setHorseTamed(tame);
+                    horse.setChested(size == 17);
+                    horse.setHorseSaddled(snapshot.getStackInSlot(0) != null);
+                    horse.func_110236_r(horse.getHorseArmorIndex(snapshot.getStackInSlot(1)));
+                    mc.displayGuiScreen(new GuiScreenHorseInventory(mc.thePlayer.inventory, snapshot, horse));
+                } else if (kind == 1) {
+                    mc.displayGuiScreen(new GuiChest(mc.thePlayer.inventory, snapshot));
+                } else {
+                    mc.displayGuiScreen(new GuiHopper(mc.thePlayer.inventory, snapshot));
+                }
+                return;
+            }
             if (type == 9) {
                 int kind = in.readUnsignedByte();
                 String title = Packet.readString(in, 64);
@@ -317,6 +355,9 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             MovingObjectPosition target = mc.objectMouseOver;
             if (target != null && target.typeOfHit == EnumMovingObjectType.TILE) {
                 byte[] data = ByteBuffer.allocate(13).put((byte) 3).putInt(target.blockX).putInt(target.blockY).putInt(target.blockZ).array();
+                PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", data));
+            } else if (camera == null && target != null && target.typeOfHit == EnumMovingObjectType.ENTITY && target.entityHit != null) {
+                byte[] data = ByteBuffer.allocate(5).put((byte) 11).putInt(target.entityHit.entityId).array();
                 PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", data));
             }
             event.setCanceled(true);

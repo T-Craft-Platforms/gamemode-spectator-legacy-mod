@@ -16,6 +16,10 @@ import net.minecraft.tileentity.TileEntityHopper;
 import net.minecraft.tileentity.TileEntityBrewingStand;
 import net.minecraft.tileentity.TileEntityBeacon;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.passive.EntityHorse;
+import net.minecraft.entity.item.EntityMinecartChest;
+import net.minecraft.entity.item.EntityMinecartHopper;
+import cpw.mods.fml.relauncher.ReflectionHelper;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.SidedProxy;
 import net.minecraft.block.Block;
@@ -130,6 +134,47 @@ public final class SpectatorMod implements ITickHandler {
         byte[] data = ByteBuffer.allocate(6).put((byte) 2).putInt(p.entityId).put((byte) (enabled ? 1 : 0)).array();
         PacketDispatcher.sendPacketToAllInDimension(PacketDispatcher.getPacket("Spectator164", data), p.dimension);
     }
+    private static void sendEntitySnapshot(EntityPlayerMP player, int id) {
+        Entity entity = player.worldObj.getEntityByID(id);
+        if (entity == null || entity.isDead || player.getDistanceSqToEntity(entity) > 36.0D) return;
+        IInventory inventory;
+        int kind;
+        if (entity.getClass() == EntityHorse.class) {
+            kind = 0;
+            inventory = ReflectionHelper.getPrivateValue(EntityHorse.class, (EntityHorse) entity, "horseChest", "field_110296_bG");
+        } else if (entity.getClass() == EntityMinecartChest.class) {
+            kind = 1;
+            inventory = (IInventory) entity;
+        } else if (entity.getClass() == EntityMinecartHopper.class) {
+            kind = 2;
+            inventory = (IInventory) entity;
+        } else return;
+        if (inventory == null) return;
+        int size = inventory.getSizeInventory();
+        if (kind == 0 ? size != 2 && size != 17 : size != (kind == 1 ? 27 : 5)) return;
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeByte(10);
+            out.writeByte(kind);
+            String title = kind == 0 ? entity.getEntityName() : inventory.getInvName();
+            if (title == null) title = "Container";
+            if (title.length() > 64) title = title.substring(0, 64);
+            Packet.writeString(title, out);
+            out.writeBoolean(kind == 0 || inventory.isInvNameLocalized());
+            if (kind == 0) {
+                EntityHorse horse = (EntityHorse) entity;
+                out.writeByte(horse.getHorseType());
+                out.writeInt(horse.getHorseVariant());
+                out.writeInt(horse.getGrowingAge());
+                out.writeBoolean(horse.isTame());
+            }
+            out.writeByte(size);
+            for (int i = 0; i < size; i++) Packet.writeItemStack(inventory.getStackInSlot(i), out);
+            out.flush();
+            if (bytes.size() <= 32760) PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", bytes.toByteArray()), (Player) player);
+        } catch (IOException ignored) { }
+    }
     private static void sendSnapshot(EntityPlayerMP player, int x, int y, int z) {
         if (!player.worldObj.blockExists(x, y, z) || player.getDistanceSq(x + 0.5D, y + 0.5D, z + 0.5D) > 64.0D) return;
         int id = player.worldObj.getBlockId(x, y, z);
@@ -209,7 +254,7 @@ public final class SpectatorMod implements ITickHandler {
                                 clientActive = packet.data[0] != 0;
             } else if (p.worldObj.isRemote && packet.data.length == 6 && packet.data[0] == 2) {
                 proxy.spectatorState(ByteBuffer.wrap(packet.data, 1, 4).getInt(), packet.data[5] != 0);
-            } else if (p.worldObj.isRemote && packet.data.length > 1 && (packet.data[0] == 4 || packet.data[0] == 8 || packet.data[0] == 9)) {
+            } else if (p.worldObj.isRemote && packet.data.length > 1 && (packet.data[0] == 4 || packet.data[0] == 8 || packet.data[0] == 9 || packet.data[0] == 10)) {
                 proxy.showInventorySnapshot(packet.data);
             } else if (p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 6) {
                 proxy.cameraTarget(ByteBuffer.wrap(packet.data, 1, 4).getInt());
@@ -230,6 +275,8 @@ public final class SpectatorMod implements ITickHandler {
                         cameraPacket(spectator, id);
                     }
                 }
+            } else if (!p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 11 && active(p)) {
+                sendEntitySnapshot((EntityPlayerMP) p, ByteBuffer.wrap(packet.data, 1, 4).getInt());
             } else if (!p.worldObj.isRemote && packet.data.length == 13 && packet.data[0] == 3 && active(p)) {
                 ByteBuffer request = ByteBuffer.wrap(packet.data, 1, 12);
                 sendSnapshot((EntityPlayerMP) p, request.getInt(), request.getInt(), request.getInt());
