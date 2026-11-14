@@ -28,6 +28,8 @@ import net.minecraft.client.model.ModelBiped;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.client.gui.Gui;
 import cpw.mods.fml.common.network.PacketDispatcher;
 import net.minecraftforge.client.event.MouseEvent;
@@ -53,6 +55,37 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     private boolean wasActive;
     private boolean creativeMode;
     private boolean allowEdit;
+    private boolean debugShortcutDown;
+    private Entity camera;
+    private int savedPerspective;
+    private boolean cameraPerspectiveSaved;
+    @Override public void cameraTarget(int id) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (id == -1 || mc.theWorld == null) { stopCamera(mc); return; }
+        Entity target = mc.theWorld.getEntityByID(id);
+        if (target == null || target.isDead || mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer)) {
+            if (mc.thePlayer != null && SpectatorMod.active(mc.thePlayer)) requestCamera(-1);
+            return;
+        }
+        if (!cameraPerspectiveSaved) {
+            savedPerspective = mc.gameSettings.thirdPersonView;
+            cameraPerspectiveSaved = true;
+        }
+        camera = target;
+        mc.gameSettings.thirdPersonView = 0;
+        if (target instanceof EntityLivingBase) mc.renderViewEntity = (EntityLivingBase) target;
+    }
+    private void stopCamera(Minecraft mc) {
+        if (cameraPerspectiveSaved) {
+            mc.gameSettings.thirdPersonView = savedPerspective;
+            cameraPerspectiveSaved = false;
+        }
+        if (mc.thePlayer != null) mc.renderViewEntity = mc.thePlayer;
+        camera = null;
+    }
+    private void requestCamera(int id) {
+        PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", ByteBuffer.allocate(5).put((byte) 5).putInt(id).array()));
+    }
     @Override public void spectatorState(int id, boolean active) {
         if (active) spectatorIds.put(id, System.currentTimeMillis());
         else spectatorIds.remove(id);
@@ -108,11 +141,31 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         if (mc.entityRenderer == null) return;
         boolean worldChanged = currentWorld != mc.theWorld;
         if (worldChanged) {
+            stopCamera(mc);
             spectatorIds.clear();
             currentWorld = mc.theWorld;
             if (mc.theWorld == null) SpectatorMod.clearClientState();
         }
         boolean active = mc.thePlayer != null && SpectatorMod.active(mc.thePlayer);
+        boolean shortcut = mc.currentScreen == null && Keyboard.isKeyDown(Keyboard.KEY_F3) && Keyboard.isKeyDown(Keyboard.KEY_N);
+        if (shortcut && !debugShortcutDown && mc.thePlayer != null) {
+            mc.thePlayer.sendChatMessage(active ? "/spectator off" : "/spectator on");
+        }
+        debugShortcutDown = shortcut;
+        if (camera != null) {
+            if (!active || camera.isDead || camera.worldObj != mc.theWorld || mc.theWorld.getEntityByID(camera.entityId) != camera) {
+                if (active) requestCamera(-1);
+                stopCamera(mc);
+            } else if (GameSettings.isKeyDown(mc.gameSettings.keyBindSneak)) {
+                requestCamera(-1);
+                stopCamera(mc);
+            } else {
+                mc.gameSettings.thirdPersonView = 0;
+                mc.thePlayer.setPositionAndRotation(camera.posX, camera.posY + camera.getEyeHeight() - mc.thePlayer.getEyeHeight(), camera.posZ,
+                        camera.rotationYaw, camera.rotationPitch);
+                mc.thePlayer.motionX = mc.thePlayer.motionY = mc.thePlayer.motionZ = 0;
+            }
+        }
         boolean creative = mc.playerController != null && mc.playerController.isInCreativeMode();
         boolean canEdit = mc.thePlayer != null && mc.thePlayer.capabilities.allowEdit;
         if (worldChanged || active != wasActive || creative != creativeMode || canEdit != allowEdit) {
@@ -126,7 +179,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             float effectiveSpeed = speed * (mc.thePlayer.isSprinting() ? 2.0F : 1.0F);
             mc.thePlayer.capabilities.setFlySpeed(effectiveSpeed);
             mc.thePlayer.onGround = false;
-            if (mc.currentScreen == null) {
+            if (mc.currentScreen == null && camera == null) {
                 int vertical = (GameSettings.isKeyDown(mc.gameSettings.keyBindJump) ? 1 : 0)
                              - (GameSettings.isKeyDown(mc.gameSettings.keyBindSneak) ? 1 : 0);
                 mc.thePlayer.motionY += vertical * 0.15D * (effectiveSpeed / 0.05D - 1.0D);
@@ -181,6 +234,10 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             return;
         }
         if (event.button == 0 && event.buttonstate) {
+            MovingObjectPosition target = mc.objectMouseOver;
+            if (camera == null && target != null && target.typeOfHit == EnumMovingObjectType.ENTITY && target.entityHit != null) {
+                requestCamera(target.entityHit.entityId);
+            }
             event.setCanceled(true);
             return;
         }
@@ -195,6 +252,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         EntityPlayer player = event.entityPlayer;
         Long seen = spectatorIds.get(player.entityId);
         boolean self = player == mc.thePlayer && SpectatorMod.active(player);
+        if (self && camera != null) { event.setCanceled(true); return; }
         if (mc.thePlayer == null || !SpectatorMod.active(mc.thePlayer) || !(player instanceof AbstractClientPlayer)
                 || (!self && (seen == null || System.currentTimeMillis() - seen.longValue() > 5000L))) return;
         float t = event.partialRenderTick;

@@ -1,6 +1,8 @@
 package org.spectator164;
 
 import java.util.EnumSet;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.nio.ByteBuffer;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -52,6 +54,7 @@ public final class SpectatorMod implements ITickHandler {
     public static CommonProxy proxy;
     private static final String KEY = "spectator164Active";
     private static boolean clientActive;
+    private static final Map<EntityPlayerMP, Entity> cameras = new WeakHashMap<EntityPlayerMP, Entity>();
     static boolean clientActive() { return clientActive; }
     static void clearClientState() { clientActive = false; }
     static boolean active(EntityPlayer p) { return p.worldObj.isRemote ? proxy.isClientSpectator(p) : p.getEntityData().getBoolean(KEY); }
@@ -74,6 +77,7 @@ public final class SpectatorMod implements ITickHandler {
             boolean enabled = args[0].equals("on");
             if (enabled && !active(p)) p.getEntityData().setInteger("spectator164PreviousMode", p.theItemInWorldManager.getGameType().getID());
             if (!enabled && active(p)) p.setGameType(EnumGameType.getByID(p.getEntityData().getInteger("spectator164PreviousMode")));
+            if (!enabled) stopCamera(p);
             p.getEntityData().setBoolean(KEY, enabled);
             p.noClip = enabled;
             p.setInvisible(enabled);
@@ -83,6 +87,12 @@ public final class SpectatorMod implements ITickHandler {
             broadcastState(p, enabled);
             p.addChatMessage(enabled ? "Spectator enabled" : "Spectator disabled");
         }
+    }
+    private static void cameraPacket(EntityPlayerMP p, int id) {
+        PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", ByteBuffer.allocate(5).put((byte) 6).putInt(id).array()), (Player) p);
+    }
+    private static void stopCamera(EntityPlayerMP p) {
+        if (cameras.remove(p) != null) cameraPacket(p, -1);
     }
     static void sync(EntityPlayerMP p, boolean enabled) { PacketDispatcher.sendPacketToPlayer(PacketDispatcher.getPacket("Spectator164", new byte[]{(byte)(enabled ? 1 : 0)}), (Player)p); }
     static void broadcastState(EntityPlayerMP p, boolean enabled) {
@@ -126,6 +136,20 @@ public final class SpectatorMod implements ITickHandler {
                 proxy.spectatorState(ByteBuffer.wrap(packet.data, 1, 4).getInt(), packet.data[5] != 0);
             } else if (p.worldObj.isRemote && packet.data.length > 1 && packet.data[0] == 4) {
                 proxy.showInventorySnapshot(packet.data);
+            } else if (p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 6) {
+                proxy.cameraTarget(ByteBuffer.wrap(packet.data, 1, 4).getInt());
+            } else if (!p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 5 && active(p)) {
+                EntityPlayerMP spectator = (EntityPlayerMP) p;
+                int id = ByteBuffer.wrap(packet.data, 1, 4).getInt();
+                if (id == -1) stopCamera(spectator);
+                else {
+                    Entity target = p.worldObj.getEntityByID(id);
+                    if (target != null && target != p && !target.isDead && !SpectatorHooks.isSpectator(target)
+                            && p.getDistanceSqToEntity(target) <= 36.0D) {
+                        cameras.put(spectator, target);
+                        cameraPacket(spectator, id);
+                    }
+                }
             } else if (!p.worldObj.isRemote && packet.data.length == 13 && packet.data[0] == 3 && active(p)) {
                 ByteBuffer request = ByteBuffer.wrap(packet.data, 1, 12);
                 sendSnapshot((EntityPlayerMP) p, request.getInt(), request.getInt(), request.getInt());
@@ -134,6 +158,7 @@ public final class SpectatorMod implements ITickHandler {
                 Entity target = p.worldObj.getEntityByID(id);
                 if (target instanceof EntityPlayerMP && target != p && !target.isDead) {
                     EntityPlayerMP spectator = (EntityPlayerMP) p;
+                    stopCamera(spectator);
                     spectator.playerNetServerHandler.setPlayerLocation(target.posX, target.posY, target.posZ, target.rotationYaw, target.rotationPitch);
                 }
             }
@@ -160,9 +185,9 @@ public final class SpectatorMod implements ITickHandler {
             broadcastState(p, active(p));
         }
         public void onPlayerLogin(EntityPlayer player) { update(player); }
-        public void onPlayerChangedDimension(EntityPlayer player) { update(player); }
-        public void onPlayerRespawn(EntityPlayer player) { update(player); }
-        public void onPlayerLogout(EntityPlayer player) { }
+        public void onPlayerChangedDimension(EntityPlayer player) { stopCamera((EntityPlayerMP) player); update(player); }
+        public void onPlayerRespawn(EntityPlayer player) { stopCamera((EntityPlayerMP) player); update(player); }
+        public void onPlayerLogout(EntityPlayer player) { cameras.remove((EntityPlayerMP) player); }
     }
     public void tickStart(EnumSet<TickType> type, Object... data) {
         EntityPlayer p=(EntityPlayer)data[0];
@@ -172,7 +197,24 @@ public final class SpectatorMod implements ITickHandler {
             if (!p.worldObj.isRemote) { p.setInvisible(true); if (p.ticksExisted % 40 == 0) broadcastState((EntityPlayerMP)p, true); }
         } else if (p.worldObj.isRemote) { p.noClip=false; }
     }
-    public void tickEnd(EnumSet<TickType> type, Object... data) { }
+    public void tickEnd(EnumSet<TickType> type, Object... data) {
+        EntityPlayer p = (EntityPlayer) data[0];
+        if (p.worldObj.isRemote) return;
+        EntityPlayerMP spectator = (EntityPlayerMP) p;
+        Entity target = cameras.get(spectator);
+        if (target == null) return;
+        if (!active(p) || target.isDead || target.worldObj != p.worldObj || SpectatorHooks.isSpectator(target)) {
+            stopCamera(spectator);
+            return;
+        }
+        double y = target.posY + target.getEyeHeight() - p.getEyeHeight();
+        if (p.getDistanceSq(target.posX, y, target.posZ) > 64.0D) {
+            spectator.playerNetServerHandler.setPlayerLocation(target.posX, y, target.posZ, target.rotationYaw, target.rotationPitch);
+        } else {
+            p.setPositionAndRotation(target.posX, y, target.posZ, target.rotationYaw, target.rotationPitch);
+        }
+        p.motionX = p.motionY = p.motionZ = 0;
+    }
     public EnumSet<TickType> ticks() { return EnumSet.of(TickType.PLAYER); }
     public String getLabel() { return "Spectator164"; }
     @ForgeSubscribe public void interact(PlayerInteractEvent e) {

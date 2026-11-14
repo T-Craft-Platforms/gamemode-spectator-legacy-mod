@@ -37,7 +37,8 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean hotbar = minecraft && (method.equals("runTick") || method.equals("func_71407_l")) && desc.equals("()V");
                 final boolean tooltip = forgeHud && method.equals("renderToolHightlight") && desc.equals("(II)V");
                 final boolean guiClick = gui && (method.equals("handleMouseClick") || method.equals("func_74191_a"));
-                if (!pressure && !collisions && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                final boolean particles = (entity || living || playerClass) && (access & ACC_STATIC) == 0;
+                if (!particles && !pressure && !collisions && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
                 if (inventory) changes[3]++;
                 if (guiClick) changes[4]++;
                 if (drop) changes[5]++;
@@ -116,7 +117,12 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                         } else super.visitFieldInsn(opcode, owner, field, descriptor);
                     }
                     @Override public void visitMethodInsn(int opcode, String owner, String target, String descriptor) {
-                        if (flying && opcode == INVOKEVIRTUAL && owner.equals("net/minecraft/world/WorldServer") &&
+                        if (particles && opcode == INVOKEVIRTUAL && owner.equals("net/minecraft/world/World")
+                                && (target.equals("spawnParticle") || target.equals("func_72869_a"))
+                                && descriptor.equals("(Ljava/lang/String;DDDDDD)V")) {
+                            super.visitVarInsn(ALOAD, 0);
+                            super.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorHooks", "spawnParticle", "(Lnet/minecraft/world/World;Ljava/lang/String;DDDDDDLnet/minecraft/entity/Entity;)V");
+                        } else if (flying && opcode == INVOKEVIRTUAL && owner.equals("net/minecraft/world/WorldServer") &&
                             (target.equals("getCollidingBoundingBoxes") || target.equals("func_72945_a")) &&
                             descriptor.equals("(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/AxisAlignedBB;)Ljava/util/List;")) {
                             changes[2]++;
