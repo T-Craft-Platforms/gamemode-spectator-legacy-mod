@@ -24,7 +24,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
         final boolean gameManager = "net.minecraft.item.ItemInWorldManager".equals(transformedName);
         final boolean controller = "net.minecraft.client.multiplayer.PlayerControllerMP".equals(transformedName);
         if (!entity && !server && !gui && !living && !potion && !playerClass && !minecart && !minecraft && !forgeHud && !gameType && !gameManager && !controller) return bytes;
-        final int[] changes = new int[17];
+        final int[] changes = new int[19];
         ClassReader reader = new ClassReader(bytes);
         ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         reader.accept(new ClassVisitor(ASM4, writer) {
@@ -33,6 +33,8 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean pressure = entity && desc.equals("()Z") && (method.equals("doesEntityNotTriggerPressurePlate") || method.equals("func_82144_au"));
                 final boolean collisions = entity && desc.equals("()V") && (method.equals("doBlockCollisions") || method.equals("func_70017_D"));
                 final boolean ladder = living && desc.equals("()Z") && (method.equals("isOnLadder") || method.equals("func_70617_f_"));
+                final boolean liquid = entity && ((desc.equals("()Z") && (method.equals("isInWater") || method.equals("func_70090_H") || method.equals("handleWaterMovement") || method.equals("func_70072_I") || method.equals("handleLavaMovement") || method.equals("func_70058_J"))) || (desc.equals("(Lnet/minecraft/block/material/Material;)Z") && (method.equals("isInsideOfMaterial") || method.equals("func_70055_a"))));
+                final boolean web = entity && desc.equals("()V") && (method.equals("setInWeb") || method.equals("func_70110_aj"));
                 final boolean potionApplicable = living && desc.equals("(Lnet/minecraft/potion/PotionEffect;)Z") && (method.equals("isPotionApplicable") || method.equals("func_70687_e"));
                 final boolean instantPotion = potion && desc.equals("(Lnet/minecraft/entity/EntityLivingBase;Lnet/minecraft/entity/EntityLivingBase;ID)V");
                 final boolean flying = server && (method.equals("handleFlying") || method.equals("func_72498_a"));
@@ -48,7 +50,9 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean capabilities = gameType && (method.equals("configurePlayerCapabilities") || method.equals("func_77147_a")) && desc.equals("(Lnet/minecraft/entity/player/PlayerCapabilities;)V");
                 final boolean managerMode = gameManager && (method.equals("setGameType") || method.equals("func_73076_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
                 final boolean clientMode = controller && (method.equals("setGameType") || method.equals("func_78746_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
-                if (!capabilities && !managerMode && !clientMode && !particles && !pressure && !collisions && !ladder && !potionApplicable && !instantPotion && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                if (!capabilities && !managerMode && !clientMode && !particles && !pressure && !collisions && !ladder && !liquid && !web && !potionApplicable && !instantPotion && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                if (liquid) changes[17]++;
+                if (web) changes[18]++;
                 if (capabilities) changes[11]++;
                 if (managerMode) changes[12]++;
                 if (clientMode) changes[13]++;
@@ -73,7 +77,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                             mv.visitVarInsn(ALOAD, 1);
                             mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", "setGameType", "(Lnet/minecraft/world/EnumGameType;)V");
                         }
-                        if (collisionEligibility || ladder || potionApplicable) {
+                        if (collisionEligibility || ladder || liquid || potionApplicable) {
                             Label normal = new Label();
                             mv.visitVarInsn(ALOAD, 0);
                             mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorHooks", "isSpectator", "(Lnet/minecraft/entity/Entity;)Z");
@@ -129,7 +133,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                             mv.visitLabel(normal);
                             mv.visitFrame(F_SAME, 0, null, 0, null);
                         }
-                        if (pressure || collisions || pickup) {
+                        if (pressure || collisions || pickup || web) {
                             Label normal = new Label();
                             mv.visitVarInsn(ALOAD, 0);
                             mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorHooks", "isSpectator", "(Lnet/minecraft/entity/Entity;)Z");
@@ -179,7 +183,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 };
             }
         }, 0);
-                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && (changes[7] != 1 || changes[14] != 1 || changes[15] != 1 || changes[16] != 1)) || (forgeHud && changes[8] != 1) || (gameType && changes[11] != 1) || (gameManager && changes[12] != 1) || (controller && changes[13] != 1)) {
+                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1 || changes[17] != 4 || changes[18] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && (changes[7] != 1 || changes[14] != 1 || changes[15] != 1 || changes[16] != 1)) || (forgeHud && changes[8] != 1) || (gameType && changes[11] != 1) || (gameManager && changes[12] != 1) || (controller && changes[13] != 1)) {
             throw new IllegalStateException("Spectator164 could not apply the expected hooks to " + transformedName + ": " + changes[0] + "," + changes[1] + "," + changes[2]);
         }
         System.out.println("Spectator164 hooks verified for " + transformedName);

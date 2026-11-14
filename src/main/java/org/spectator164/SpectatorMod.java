@@ -243,7 +243,7 @@ public final class SpectatorMod implements ITickHandler {
         EntityPlayer p=(EntityPlayer)data[0];
         if (!p.worldObj.isRemote && p.ticksExisted % 40 == 0) sync((EntityPlayerMP)p, active(p));
         if (active(p)) {
-            p.noClip=true; p.fallDistance=0; p.capabilities.isFlying=true; p.capabilities.allowFlying=true;
+            p.noClip=true; p.fallDistance=0; p.extinguish(); p.capabilities.isFlying=true; p.capabilities.allowFlying=true;
             if (!p.worldObj.isRemote) { p.setInvisible(true); if (p.ticksExisted % 40 == 0) broadcastState((EntityPlayerMP)p, true); }
         } else if (p.worldObj.isRemote) { p.noClip=false; }
     }
