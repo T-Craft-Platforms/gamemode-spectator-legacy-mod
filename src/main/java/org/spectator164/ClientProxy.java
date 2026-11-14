@@ -149,7 +149,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         boolean active = mc.thePlayer != null && SpectatorMod.active(mc.thePlayer);
         boolean shortcut = mc.currentScreen == null && Keyboard.isKeyDown(Keyboard.KEY_F3) && Keyboard.isKeyDown(Keyboard.KEY_N);
         if (shortcut && !debugShortcutDown && mc.thePlayer != null) {
-            mc.thePlayer.sendChatMessage(active ? "/spectator off" : "/spectator on");
+            PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", new byte[] { 7 }));
         }
         debugShortcutDown = shortcut;
         if (camera != null) {

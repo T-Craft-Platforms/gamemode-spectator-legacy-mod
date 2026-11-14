@@ -19,6 +19,7 @@ import net.minecraft.inventory.IInventory;
 import net.minecraftforge.event.Event.Result;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.ITickHandler;
 import cpw.mods.fml.common.TickType;
@@ -31,15 +32,18 @@ import cpw.mods.fml.common.network.IPacketHandler;
 import cpw.mods.fml.common.network.PacketDispatcher;
 import cpw.mods.fml.common.network.Player;
 import cpw.mods.fml.relauncher.Side;
-import net.minecraft.command.CommandBase;
+import net.minecraft.command.CommandGameMode;
 import net.minecraft.command.ICommandSender;
-import net.minecraft.command.WrongUsageException;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.INetworkManager;
 import net.minecraft.network.packet.Packet250CustomPayload;
 import net.minecraft.world.EnumGameType;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.EnumHelper;
+import cpw.mods.fml.common.registry.LanguageRegistry;
+import net.minecraft.item.ItemInWorldManager;
+import net.minecraft.entity.player.PlayerCapabilities;
 import net.minecraftforge.event.ForgeSubscribe;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
@@ -54,10 +58,18 @@ public final class SpectatorMod implements ITickHandler {
     public static CommonProxy proxy;
     private static final String KEY = "spectator164Active";
     private static boolean clientActive;
+    private static EnumGameType spectatorMode;
     private static final Map<EntityPlayerMP, Entity> cameras = new WeakHashMap<EntityPlayerMP, Entity>();
     static boolean clientActive() { return clientActive; }
     static void clearClientState() { clientActive = false; }
-    static boolean active(EntityPlayer p) { return p.worldObj.isRemote ? proxy.isClientSpectator(p) : p.getEntityData().getBoolean(KEY); }
+    static void setClientMode(EnumGameType mode) { clientActive = mode.getID() == 3; }
+    static boolean active(EntityPlayer p) { return p.worldObj.isRemote ? proxy.isClientSpectator(p) : p instanceof EntityPlayerMP && ((EntityPlayerMP)p).theItemInWorldManager.getGameType().getID() == 3; }
+    @EventHandler public void preInit(FMLPreInitializationEvent event) {
+        spectatorMode = (EnumGameType) EnumHelper.addEnum(EnumGameType.class, "SPECTATOR", new Class<?>[] { Integer.TYPE, String.class }, new Object[] { Integer.valueOf(3), "spectator" });
+        if (spectatorMode == null || EnumGameType.getByID(3) != spectatorMode || !"spectator".equals(spectatorMode.getName()))
+            throw new IllegalStateException("Could not register spectator game mode");
+        LanguageRegistry.instance().addStringLocalization("gameMode.spectator", "en_US", "Spectator Mode");
+    }
     @EventHandler public void init(FMLInitializationEvent e) {
         MinecraftForge.EVENT_BUS.register(this);
         proxy.init();
@@ -66,26 +78,34 @@ public final class SpectatorMod implements ITickHandler {
         TickRegistry.registerTickHandler(this, Side.CLIENT);
     }
     @EventHandler public void serverStart(FMLServerStartingEvent e) { e.registerServerCommand(new Command()); }
-    public static class Command extends CommandBase {
-        public int compareTo(Object other) { return getCommandName().compareTo(((net.minecraft.command.ICommand)other).getCommandName()); }
-        public String getCommandName() { return "spectator"; }
-        public String getCommandUsage(ICommandSender sender) { return "/spectator <on|off>"; }
-        public int getRequiredPermissionLevel() { return 2; }
-        public void processCommand(ICommandSender sender, String[] args) {
-            if (args.length != 1 || !(args[0].equals("on") || args[0].equals("off"))) throw new WrongUsageException(getCommandUsage(sender), new Object[0]);
-            EntityPlayerMP p = getCommandSenderAsPlayer(sender);
-            boolean enabled = args[0].equals("on");
-            if (enabled && !active(p)) p.getEntityData().setInteger("spectator164PreviousMode", p.theItemInWorldManager.getGameType().getID());
-            if (!enabled && active(p)) p.setGameType(EnumGameType.getByID(p.getEntityData().getInteger("spectator164PreviousMode")));
-            if (!enabled) stopCamera(p);
-            p.getEntityData().setBoolean(KEY, enabled);
-            p.noClip = enabled;
-            p.setInvisible(enabled);
-            if (enabled) { p.capabilities.allowFlying=true; p.capabilities.isFlying=true; p.capabilities.disableDamage=true; }
-            p.sendPlayerAbilities();
+    public static class Command extends CommandGameMode {
+        @Override protected EnumGameType getGameModeFromCommand(ICommandSender sender, String name) {
+            return "spectator".equalsIgnoreCase(name) ? spectatorMode : super.getGameModeFromCommand(sender, name);
+        }
+        @Override public java.util.List addTabCompletionOptions(ICommandSender sender, String[] args) {
+            if (args.length == 1) return getListOfStringsMatchingLastWord(args, new String[] { "survival", "creative", "adventure", "spectator" });
+            return super.addTabCompletionOptions(sender, args);
+        }
+    }
+    public static void configureCapabilities(EnumGameType mode, PlayerCapabilities capabilities) {
+        if (mode.getID() != 3) return;
+        capabilities.allowFlying = true;
+        capabilities.isFlying = true;
+        capabilities.disableDamage = true;
+        capabilities.isCreativeMode = false;
+        capabilities.allowEdit = false;
+    }
+    public static void changingMode(ItemInWorldManager manager, EnumGameType next) {
+        EntityPlayerMP p = manager.thisPlayerMP;
+        if (p == null) return;
+        int oldId = manager.getGameType().getID();
+        boolean enabled = next.getID() == 3;
+        if (enabled && oldId != 3 && oldId >= 0) p.getEntityData().setInteger("spectator164PreviousMode", oldId);
+        if (oldId == 3 && !enabled) { stopCamera(p); p.noClip = false; p.setInvisible(false); }
+        if (enabled) { p.noClip = true; p.fallDistance = 0; p.setInvisible(true); }
+        if (p.playerNetServerHandler != null && (oldId == 3) != enabled) {
             sync(p, enabled);
             broadcastState(p, enabled);
-            p.addChatMessage(enabled ? "Spectator enabled" : "Spectator disabled");
         }
     }
     private static void cameraPacket(EntityPlayerMP p, int id) {
@@ -138,6 +158,11 @@ public final class SpectatorMod implements ITickHandler {
                 proxy.showInventorySnapshot(packet.data);
             } else if (p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 6) {
                 proxy.cameraTarget(ByteBuffer.wrap(packet.data, 1, 4).getInt());
+            } else if (!p.worldObj.isRemote && packet.data.length == 1 && packet.data[0] == 7) {
+                EntityPlayerMP playerMP = (EntityPlayerMP) p;
+                int mode = active(p) ? p.getEntityData().getInteger("spectator164PreviousMode") : 3;
+                if (active(p) && (mode < 0 || mode > 2)) mode = 0;
+                playerMP.mcServer.getCommandManager().executeCommand(p, "gamemode " + mode);
             } else if (!p.worldObj.isRemote && packet.data.length == 5 && packet.data[0] == 5 && active(p)) {
                 EntityPlayerMP spectator = (EntityPlayerMP) p;
                 int id = ByteBuffer.wrap(packet.data, 1, 4).getInt();
@@ -184,7 +209,14 @@ public final class SpectatorMod implements ITickHandler {
             sync(p, active(p));
             broadcastState(p, active(p));
         }
-        public void onPlayerLogin(EntityPlayer player) { update(player); }
+        public void onPlayerLogin(EntityPlayer player) {
+            EntityPlayerMP p = (EntityPlayerMP) player;
+            if (p.getEntityData().getBoolean(KEY)) {
+                p.getEntityData().removeTag(KEY);
+                if (!active(p) && !p.mcServer.getForceGamemode()) p.setGameType(spectatorMode);
+            }
+            update(p);
+        }
         public void onPlayerChangedDimension(EntityPlayer player) { stopCamera((EntityPlayerMP) player); update(player); }
         public void onPlayerRespawn(EntityPlayer player) { stopCamera((EntityPlayerMP) player); update(player); }
         public void onPlayerLogout(EntityPlayer player) { cameras.remove((EntityPlayerMP) player); }

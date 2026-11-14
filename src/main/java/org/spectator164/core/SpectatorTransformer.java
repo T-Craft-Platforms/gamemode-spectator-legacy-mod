@@ -19,8 +19,11 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
         final boolean minecart = "net.minecraft.entity.item.EntityMinecart".equals(transformedName);
         final boolean minecraft = "net.minecraft.client.Minecraft".equals(transformedName);
         final boolean forgeHud = "net.minecraftforge.client.GuiIngameForge".equals(transformedName);
-        if (!entity && !server && !gui && !living && !playerClass && !minecart && !minecraft && !forgeHud) return bytes;
-        final int[] changes = new int[11];
+        final boolean gameType = "net.minecraft.world.EnumGameType".equals(transformedName);
+        final boolean gameManager = "net.minecraft.item.ItemInWorldManager".equals(transformedName);
+        final boolean controller = "net.minecraft.client.multiplayer.PlayerControllerMP".equals(transformedName);
+        if (!entity && !server && !gui && !living && !playerClass && !minecart && !minecraft && !forgeHud && !gameType && !gameManager && !controller) return bytes;
+        final int[] changes = new int[14];
         ClassReader reader = new ClassReader(bytes);
         ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         reader.accept(new ClassVisitor(ASM4, writer) {
@@ -38,7 +41,13 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean tooltip = forgeHud && method.equals("renderToolHightlight") && desc.equals("(II)V");
                 final boolean guiClick = gui && (method.equals("handleMouseClick") || method.equals("func_74191_a"));
                 final boolean particles = (entity || living || playerClass) && (access & ACC_STATIC) == 0;
-                if (!particles && !pressure && !collisions && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                final boolean capabilities = gameType && (method.equals("configurePlayerCapabilities") || method.equals("func_77147_a")) && desc.equals("(Lnet/minecraft/entity/player/PlayerCapabilities;)V");
+                final boolean managerMode = gameManager && (method.equals("setGameType") || method.equals("func_73076_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
+                final boolean clientMode = controller && (method.equals("setGameType") || method.equals("func_78746_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
+                if (!capabilities && !managerMode && !clientMode && !particles && !pressure && !collisions && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                if (capabilities) changes[11]++;
+                if (managerMode) changes[12]++;
+                if (clientMode) changes[13]++;
                 if (inventory) changes[3]++;
                 if (guiClick) changes[4]++;
                 if (drop) changes[5]++;
@@ -51,6 +60,15 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 return new MethodVisitor(ASM4, mv) {
                     @Override public void visitCode() {
                         super.visitCode();
+                        if (managerMode) {
+                            mv.visitVarInsn(ALOAD, 0);
+                            mv.visitVarInsn(ALOAD, 1);
+                            mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorMod", "changingMode", "(Lnet/minecraft/item/ItemInWorldManager;Lnet/minecraft/world/EnumGameType;)V");
+                        }
+                        if (clientMode) {
+                            mv.visitVarInsn(ALOAD, 1);
+                            mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", "setGameType", "(Lnet/minecraft/world/EnumGameType;)V");
+                        }
                         if (collisionEligibility) {
                             Label normal = new Label();
                             mv.visitVarInsn(ALOAD, 0);
@@ -109,6 +127,14 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                             mv.visitFrame(F_SAME, 0, null, 0, null);
                         }
                     }
+                    @Override public void visitInsn(int opcode) {
+                        if (capabilities && opcode == RETURN) {
+                            mv.visitVarInsn(ALOAD, 0);
+                            mv.visitVarInsn(ALOAD, 1);
+                            mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorMod", "configureCapabilities", "(Lnet/minecraft/world/EnumGameType;Lnet/minecraft/entity/player/PlayerCapabilities;)V");
+                        }
+                        super.visitInsn(opcode);
+                    }
                     @Override public void visitFieldInsn(int opcode, String owner, String field, String descriptor) {
                         if (hotbar && opcode == PUTFIELD && owner.equals("net/minecraft/entity/player/InventoryPlayer")
                                 && (field.equals("currentItem") || field.equals("field_70461_c")) && descriptor.equals("I")) {
@@ -132,7 +158,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 };
             }
         }, 0);
-                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && changes[7] != 1) || (forgeHud && changes[8] != 1)) {
+                if ((entity && (changes[0] != 1 || changes[1] != 1 || changes[6] != 1)) || (server && (changes[2] != 2 || changes[3] != 3 || changes[5] != 1)) || (gui && changes[4] != 1) || (minecart && changes[6] != 1) || (playerClass && changes[9] != 1) || (living && changes[10] != 2) || (minecraft && changes[7] != 1) || (forgeHud && changes[8] != 1) || (gameType && changes[11] != 1) || (gameManager && changes[12] != 1) || (controller && changes[13] != 1)) {
             throw new IllegalStateException("Spectator164 could not apply the expected hooks to " + transformedName + ": " + changes[0] + "," + changes[1] + "," + changes[2]);
         }
         System.out.println("Spectator164 hooks verified for " + transformedName);
