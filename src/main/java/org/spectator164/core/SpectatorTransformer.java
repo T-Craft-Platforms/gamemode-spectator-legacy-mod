@@ -15,6 +15,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
         final boolean server = "net.minecraft.network.NetServerHandler".equals(transformedName);
                 final boolean gui = "net.minecraft.client.gui.inventory.GuiContainer".equals(transformedName);
         final boolean living = "net.minecraft.entity.EntityLivingBase".equals(transformedName);
+        final boolean potion = "net.minecraft.potion.Potion".equals(transformedName);
         final boolean playerClass = "net.minecraft.entity.player.EntityPlayer".equals(transformedName);
         final boolean minecart = "net.minecraft.entity.item.EntityMinecart".equals(transformedName);
         final boolean minecraft = "net.minecraft.client.Minecraft".equals(transformedName);
@@ -22,7 +23,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
         final boolean gameType = "net.minecraft.world.EnumGameType".equals(transformedName);
         final boolean gameManager = "net.minecraft.item.ItemInWorldManager".equals(transformedName);
         final boolean controller = "net.minecraft.client.multiplayer.PlayerControllerMP".equals(transformedName);
-        if (!entity && !server && !gui && !living && !playerClass && !minecart && !minecraft && !forgeHud && !gameType && !gameManager && !controller) return bytes;
+        if (!entity && !server && !gui && !living && !potion && !playerClass && !minecart && !minecraft && !forgeHud && !gameType && !gameManager && !controller) return bytes;
         final int[] changes = new int[17];
         ClassReader reader = new ClassReader(bytes);
         ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
@@ -32,6 +33,8 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean pressure = entity && desc.equals("()Z") && (method.equals("doesEntityNotTriggerPressurePlate") || method.equals("func_82144_au"));
                 final boolean collisions = entity && desc.equals("()V") && (method.equals("doBlockCollisions") || method.equals("func_70017_D"));
                 final boolean ladder = living && desc.equals("()Z") && (method.equals("isOnLadder") || method.equals("func_70617_f_"));
+                final boolean potionApplicable = living && desc.equals("(Lnet/minecraft/potion/PotionEffect;)Z") && (method.equals("isPotionApplicable") || method.equals("func_70687_e"));
+                final boolean instantPotion = potion && desc.equals("(Lnet/minecraft/entity/EntityLivingBase;Lnet/minecraft/entity/EntityLivingBase;ID)V");
                 final boolean flying = server && (method.equals("handleFlying") || method.equals("func_72498_a"));
                                                 final boolean inventory = server && (method.equals("handleWindowClick") || method.equals("func_72523_a") || method.equals("handleEnchantItem") || method.equals("func_72479_a") || method.equals("handleCreativeSetSlot") || method.equals("func_72464_a"));
                 final boolean drop = server && (method.equals("handleBlockDig") || method.equals("func_72510_a"));
@@ -45,7 +48,7 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                 final boolean capabilities = gameType && (method.equals("configurePlayerCapabilities") || method.equals("func_77147_a")) && desc.equals("(Lnet/minecraft/entity/player/PlayerCapabilities;)V");
                 final boolean managerMode = gameManager && (method.equals("setGameType") || method.equals("func_73076_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
                 final boolean clientMode = controller && (method.equals("setGameType") || method.equals("func_78746_a")) && desc.equals("(Lnet/minecraft/world/EnumGameType;)V");
-                if (!capabilities && !managerMode && !clientMode && !particles && !pressure && !collisions && !ladder && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
+                if (!capabilities && !managerMode && !clientMode && !particles && !pressure && !collisions && !ladder && !potionApplicable && !instantPotion && !flying && !inventory && !guiClick && !drop && !entityCollision && !collisionEligibility && !pickup && !hotbar && !tooltip) return mv;
                 if (capabilities) changes[11]++;
                 if (managerMode) changes[12]++;
                 if (clientMode) changes[13]++;
@@ -70,13 +73,22 @@ public final class SpectatorTransformer implements IClassTransformer, Opcodes {
                             mv.visitVarInsn(ALOAD, 1);
                             mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/ClientHooks", "setGameType", "(Lnet/minecraft/world/EnumGameType;)V");
                         }
-                        if (collisionEligibility || ladder) {
+                        if (collisionEligibility || ladder || potionApplicable) {
                             Label normal = new Label();
                             mv.visitVarInsn(ALOAD, 0);
                             mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorHooks", "isSpectator", "(Lnet/minecraft/entity/Entity;)Z");
                             mv.visitJumpInsn(IFEQ, normal);
                             mv.visitInsn(ICONST_0);
                             mv.visitInsn(IRETURN);
+                            mv.visitLabel(normal);
+                            mv.visitFrame(F_SAME, 0, null, 0, null);
+                        }
+                        if (instantPotion) {
+                            Label normal = new Label();
+                            mv.visitVarInsn(ALOAD, 2);
+                            mv.visitMethodInsn(INVOKESTATIC, "org/spectator164/SpectatorHooks", "isSpectator", "(Lnet/minecraft/entity/Entity;)Z");
+                            mv.visitJumpInsn(IFEQ, normal);
+                            mv.visitInsn(RETURN);
                             mv.visitLabel(normal);
                             mv.visitFrame(F_SAME, 0, null, 0, null);
                         }

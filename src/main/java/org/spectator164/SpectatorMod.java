@@ -103,7 +103,7 @@ public final class SpectatorMod implements ITickHandler {
         boolean enabled = next.getID() == 3;
         if (enabled && oldId != 3 && oldId >= 0) p.getEntityData().setInteger("spectator164PreviousMode", oldId);
         if (oldId == 3 && !enabled) { stopCamera(p); p.noClip = false; p.setInvisible(false); }
-        if (enabled) { p.noClip = true; p.fallDistance = 0; p.setInvisible(true); }
+        if (enabled) { p.noClip = true; p.fallDistance = 0; p.setInvisible(true); p.clearActivePotions(); }
         if (p.playerNetServerHandler != null && (oldId == 3) != enabled) {
             sync(p, enabled);
             broadcastState(p, enabled);
