@@ -257,11 +257,11 @@ public final class SpectatorMod implements ITickHandler {
             stopCamera(spectator);
             return;
         }
-        double y = target.posY + target.getEyeHeight() - p.getEyeHeight();
-        if (p.getDistanceSq(target.posX, y, target.posZ) > 64.0D) {
-            spectator.playerNetServerHandler.setPlayerLocation(target.posX, y, target.posZ, target.rotationYaw, target.rotationPitch);
+        double x = SpectatorHooks.cameraX(target), y = SpectatorHooks.cameraY(target) - p.getEyeHeight(), z = SpectatorHooks.cameraZ(target);
+        if (p.getDistanceSq(x, y, z) > 64.0D) {
+            spectator.playerNetServerHandler.setPlayerLocation(x, y, z, target.rotationYaw, target.rotationPitch);
         } else {
-            p.setPositionAndRotation(target.posX, y, target.posZ, target.rotationYaw, target.rotationPitch);
+            p.setPositionAndRotation(x, y, z, target.rotationYaw, target.rotationPitch);
         }
         p.motionX = p.motionY = p.motionZ = 0;
     }

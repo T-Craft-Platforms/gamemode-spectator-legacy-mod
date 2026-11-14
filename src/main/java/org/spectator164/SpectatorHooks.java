@@ -4,6 +4,10 @@ import java.util.Collections;
 import java.util.List;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.EntityHanging;
+import net.minecraft.entity.item.EntityMinecart;
+import net.minecraft.entity.item.EntityBoat;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.World;
@@ -18,6 +22,23 @@ public final class SpectatorHooks {
     }
     public static boolean blockEntityCollision(Entity first, Entity second) {
         return isSpectator(first) || isSpectator(second);
+    }
+    public static double cameraX(Entity entity) {
+        if (!(entity instanceof EntityHanging)) return entity.posX;
+        double angle = Math.toRadians(((EntityHanging) entity).hangingDirection * 90.0D);
+        double distance = (entity.boundingBox.maxX - entity.boundingBox.minX) / 2.0D + 0.25D;
+        return entity.posX - Math.sin(angle) * distance;
+    }
+    public static double cameraZ(Entity entity) {
+        if (!(entity instanceof EntityHanging)) return entity.posZ;
+        double angle = Math.toRadians(((EntityHanging) entity).hangingDirection * 90.0D);
+        double distance = (entity.boundingBox.maxZ - entity.boundingBox.minZ) / 2.0D + 0.25D;
+        return entity.posZ + Math.cos(angle) * distance;
+    }
+    public static double cameraY(Entity entity) {
+        if (entity instanceof EntityMinecart || entity instanceof EntityBoat) return entity.boundingBox.maxY + 0.25D;
+        if (entity instanceof EntityLivingBase) return entity.boundingBox.minY + entity.getEyeHeight();
+        return (entity.boundingBox.minY + entity.boundingBox.maxY) / 2.0D;
     }
     public static boolean blockDrop(NetServerHandler handler, Packet14BlockDig packet) {
         return (packet.status == 3 || packet.status == 4) && blockInventoryChange(handler);

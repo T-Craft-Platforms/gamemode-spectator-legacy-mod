@@ -30,9 +30,13 @@ import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.model.ModelBiped;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraftforge.client.event.RenderPlayerEvent;
+import net.minecraftforge.client.event.RenderLivingEvent;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityHanging;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.item.ItemStack;
+import net.minecraft.world.World;
 import net.minecraft.client.gui.Gui;
 import cpw.mods.fml.common.network.PacketDispatcher;
 import net.minecraftforge.client.event.MouseEvent;
@@ -59,6 +63,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
     private boolean creativeMode;
     private boolean allowEdit;
     private Entity camera;
+    private CameraAnchor cameraAnchor;
     @Override public void cameraTarget(int id) {
         Minecraft mc = Minecraft.getMinecraft();
         if (id == -1 || mc.theWorld == null) { stopCamera(mc); return; }
@@ -68,11 +73,37 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
             return;
         }
         camera = target;
-        if (target instanceof EntityLivingBase) mc.renderViewEntity = (EntityLivingBase) target;
+        cameraAnchor = new CameraAnchor(mc.theWorld);
+        updateCameraAnchor();
+        mc.renderViewEntity = cameraAnchor;
     }
     private void stopCamera(Minecraft mc) {
         if (mc.thePlayer != null) mc.renderViewEntity = mc.thePlayer;
         camera = null;
+        cameraAnchor = null;
+    }
+    private void updateCameraAnchor() {
+        if (camera == null || cameraAnchor == null) return;
+        double x = SpectatorHooks.cameraX(camera), y = SpectatorHooks.cameraY(camera), z = SpectatorHooks.cameraZ(camera);
+        cameraAnchor.setPosition(x, y, z);
+        cameraAnchor.prevPosX = x + camera.prevPosX - camera.posX;
+        cameraAnchor.prevPosY = y + camera.prevPosY - camera.posY;
+        cameraAnchor.prevPosZ = z + camera.prevPosZ - camera.posZ;
+        cameraAnchor.lastTickPosX = x + camera.lastTickPosX - camera.posX;
+        cameraAnchor.lastTickPosY = y + camera.lastTickPosY - camera.posY;
+        cameraAnchor.lastTickPosZ = z + camera.lastTickPosZ - camera.posZ;
+        cameraAnchor.rotationYaw = camera instanceof EntityHanging ? ((EntityHanging) camera).hangingDirection * 90.0F : camera.rotationYaw;
+        cameraAnchor.prevRotationYaw = camera instanceof EntityHanging ? cameraAnchor.rotationYaw : camera.prevRotationYaw;
+        cameraAnchor.rotationPitch = camera.rotationPitch;
+        cameraAnchor.prevRotationPitch = camera.prevRotationPitch;
+    }
+    private static final class CameraAnchor extends EntityLivingBase {
+        CameraAnchor(World world) { super(world); yOffset = 1.62F; noClip = true; }
+        @Override public float getEyeHeight() { return 0.0F; }
+        @Override public ItemStack getHeldItem() { return null; }
+        @Override public ItemStack getCurrentItemOrArmor(int slot) { return null; }
+        @Override public void setCurrentItemOrArmor(int slot, ItemStack stack) { }
+        @Override public ItemStack[] getLastActiveItems() { return new ItemStack[0]; }
     }
     private void requestCamera(int id) {
         PacketDispatcher.sendPacketToServer(PacketDispatcher.getPacket("Spectator164", ByteBuffer.allocate(5).put((byte) 5).putInt(id).array()));
@@ -135,6 +166,12 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         public void init() {
         MinecraftForge.EVENT_BUS.register(this);
         TickRegistry.registerTickHandler(this, Side.CLIENT);
+        TickRegistry.registerTickHandler(new ITickHandler() {
+            public void tickStart(EnumSet<TickType> type, Object... data) { updateCameraAnchor(); }
+            public void tickEnd(EnumSet<TickType> type, Object... data) { }
+            public EnumSet<TickType> ticks() { return EnumSet.of(TickType.RENDER); }
+            public String getLabel() { return "Spectator164Camera"; }
+        }, Side.CLIENT);
     }
     private ItemRenderer originalRenderer;
     private ItemRenderer spectatorRenderer;
@@ -157,7 +194,7 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
                 requestCamera(-1);
                 stopCamera(mc);
             } else {
-                mc.thePlayer.setPositionAndRotation(camera.posX, camera.posY + camera.getEyeHeight() - mc.thePlayer.getEyeHeight(), camera.posZ,
+                mc.thePlayer.setPositionAndRotation(SpectatorHooks.cameraX(camera), SpectatorHooks.cameraY(camera) - mc.thePlayer.getEyeHeight(), SpectatorHooks.cameraZ(camera),
                         camera.rotationYaw, camera.rotationPitch);
                 mc.thePlayer.motionX = mc.thePlayer.motionY = mc.thePlayer.motionZ = 0;
             }
@@ -276,6 +313,10 @@ public class ClientProxy extends CommonProxy implements ITickHandler {
         GL11.glPopMatrix();
         GL11.glColor4f(1, 1, 1, 1);
         event.setCanceled(true);
+    }
+    @ForgeSubscribe public void hideCameraTarget(RenderLivingEvent.Pre event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (camera == event.entity && mc.gameSettings.thirdPersonView == 0) event.setCanceled(true);
     }
     @ForgeSubscribe public void menu(RenderGameOverlayEvent.Post event) {
         Minecraft mc = Minecraft.getMinecraft();
